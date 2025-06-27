@@ -9,3 +9,4 @@ google-auth-oauthlib
 requests
 faiss-cpu
 PyMuPDF
+google-api-python-client
