@@ -1,9 +1,11 @@
 fastapi
-uvicorn
-transformers
-torch
-sentence-transformers
+pydantic
+python-dotenv
+gspread
+httpx
+oauth2client
+google-auth
+google-auth-oauthlib
+requests
 faiss-cpu
 PyMuPDF
-accelerate
-langchain
