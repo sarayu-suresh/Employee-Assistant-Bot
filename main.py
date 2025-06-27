@@ -19,6 +19,13 @@ from models.query_embedding import get_remote_embedding
 from agents.detect_intent import detect_intent
 from agents.query_docs import answer_from_docs
 from agents.generate_response import generate_response
+from agents.find_expert import find_internal_expert
+from scripts.drive_utils import search_drive_folder
+from scripts.sheet_utils import get_google_doc_text
+from scripts.sheet_utils import get_status_doc_url, get_google_doc_text
+from agents.weekly_status_analyzer import analyze_status_doc
+from scripts.email_utils import fetch_recent_emails
+from agents.email_taskmaster import summarize_email, extract_task, rank_and_format_tasks
 
 load_dotenv()
 app = FastAPI()
@@ -186,12 +193,55 @@ async def chat_event(request: Request):
         elif intent == "greeting":
             response = generate_response(message, instruction="You are a friendly assistant. Greet the user.")
             return JSONResponse(content={"text": response})
+        elif intent == "document_query":
+            # Extract a simple keyword from the user message
+            # keyword = extract_query_term(message)  # implement this to strip stopwords etc.
+            doc_info = search_drive_folder(message)
+            return JSONResponse(content={"text": doc_info})
         elif intent == "github_repo_query":
             repo_url_match = re.search(r"https?://github\.com/[\w\.-]+/[\w\.-]+", message)
             if repo_url_match:
                 repo_url = repo_url_match.group()
                 answer = answer_from_github_repo(message, repo_url)
                 return JSONResponse(content={"text": answer})
+        elif intent == "status_doc":
+            name = generate_response(message, instruction="Extract the person name from this message, return just the name")
+            print(name)
+            if not name:
+                return JSONResponse(content={"text": "❌ Could not extract name. Try saying 'What is the status of <name>'."})
+            doc_url = get_status_doc_url(name)
+            if not doc_url:
+                return JSONResponse(content={"text": f"❌ Could not find a document for {name}."})
+            try:
+                doc_text = get_google_doc_text(doc_url)
+                summary = analyze_status_doc( doc_text, question=message, person_name=name)
+                return JSONResponse(content={"text": f"📄 *Status summary for {name}*:\n\n{summary}"})
+            except Exception as e:
+                print("Doc fetch/analyze error:", str(e))
+                return JSONResponse(content={"text": f"❌ Error processing document for {name}."})
+
+        elif intent == "emails_summarizer":
+            try:
+                emails = fetch_recent_emails(user,  max_emails=5)
+                if not emails:
+                    return JSONResponse(content={"text": "📭 No recent emails found."})
+
+                task_responses = []
+                for email in emails:
+                    summary = summarize_email(email)
+                    task = extract_task(summary)
+                    print("Task Extracted:", task)
+                    task_responses.append(task)
+
+                final_summary = rank_and_format_tasks(task_responses)
+                return JSONResponse(content={"text": final_summary})
+
+            except Exception as e:
+                print("Email summarization error:", e)
+                return JSONResponse(content={"text": "⚠️ Could not analyze emails."})
+        elif intent == "need_help":
+            response = find_internal_expert(message)
+            return JSONResponse(content={"text": response})
         else:
             answer = answer_from_docs(message)
             return JSONResponse(content={"text": answer})

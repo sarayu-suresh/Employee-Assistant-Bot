@@ -101,3 +101,16 @@ def get_google_doc_text(doc_url: str) -> str:
                 if 'textRun' in elem:
                     text_output += elem['textRun']['content']
     return text_output
+
+def get_name_email_map():
+    client = get_sheet_client()
+    sheet = client.open_by_url(
+        "https://docs.google.com/spreadsheets/d/1XbVka8zPAQaBmirGYCUocPeRnD5I7FLf3JCA09HFP20/edit#gid=0"
+    ).sheet1  
+
+    data = sheet.get_all_records()
+
+    email = {row["Name"].strip().lower(): row["Email"].strip() for row in data if row.get("Name") and row.get("Email")}
+    print(email)
+
+    return email
