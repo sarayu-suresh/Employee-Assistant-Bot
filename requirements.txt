@@ -1,3 +1,4 @@
+dateparser
 fastapi
 pydantic
 python-dotenv

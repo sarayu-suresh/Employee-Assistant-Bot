@@ -13,7 +13,6 @@ import re
 from agent_manager import dispatch_agent
 from scripts.chat_auth import get_chat_access_token
 from scripts.sheet_utils import get_manager_email, notify_manager_in_space
-from agents.github_query import answer_from_github_repo
 from scripts.cards import build_leave_confirmation_card, build_ai_email_preview_card
 from models.query_llm import query_mistral_dkubex
 from models.query_embedding import get_remote_embedding
