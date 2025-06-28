@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 import uuid
 import re
 
+from agent_manager import dispatch_agent
 from scripts.chat_auth import get_chat_access_token
 from scripts.sheet_utils import get_manager_email, notify_manager_in_space
 from agents.github_query import answer_from_github_repo
@@ -17,15 +18,9 @@ from scripts.cards import build_leave_confirmation_card, build_ai_email_preview_
 from models.query_llm import query_mistral_dkubex
 from models.query_embedding import get_remote_embedding
 from agents.detect_intent import detect_intent
-from agents.query_docs import answer_from_docs
 from agents.generate_response import generate_response
-from agents.find_expert import find_internal_expert
-from scripts.drive_utils import search_drive_folder
-from scripts.sheet_utils import get_google_doc_text
-from scripts.sheet_utils import get_status_doc_url, get_google_doc_text
-from agents.weekly_status_analyzer import analyze_status_doc
-from scripts.email_utils import fetch_recent_emails
-from agents.email_taskmaster import summarize_email, extract_task, rank_and_format_tasks
+from scripts.calendar_utils import normalize_to_iso_date
+from scripts.calendar_utils import create_calendar_event
 
 load_dotenv()
 app = FastAPI()
@@ -167,84 +162,61 @@ async def chat_event(request: Request):
             emp_session["action_taken"] = True
             user_sessions[session_key] = emp_session
             return JSONResponse(content={"text": "Mail ignored."})
+        
+        elif action == "confirm_meeting_slot":
+            employee = raw_params.get("employee")
+            selected_slot = raw_params.get("slot")
+            participants = raw_params.get("participants", "").split(",")
+            title = raw_params.get("title")
+            request_id = raw_params.get("request_id")
+            date = normalize_to_iso_date("today")
+            if "–" in selected_slot:
+                start_time = f"{date}T{selected_slot.split('–')[0]}:00Z"
+                meet_link, calendar_link = create_calendar_event(
+                    title=title,
+                    start_time_str=start_time,
+                    duration_min=30,
+                    attendees=participants,
+                    description="Scheduled via AskX bot"
+                )
+                return JSONResponse(content={
+                    "text": (
+                        f"✅ Meeting Scheduled: *{title}*\n"
+                        f"👥 With: {', '.join(participants)}\n"
+                        f"🕒 Time: {selected_slot} on {date}\n"
+                        f"🔗 [Join Meeting]({meet_link}) | [View in Calendar]({calendar_link})"
+                    )
+                })
+            else:
+                return JSONResponse(content={"text": "❌ Invalid slot selection."})
 
     if message:
-        # token = get_chat_access_token("config/creds.json")
-        # headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        # loading_payload = {
-        #     "text": "Please wait a moment...."
-        # }
-        # loading_url = f"https://chat.googleapis.com/v1/{space_id}/messages"
-        # loading_res = requests.post(loading_url, headers=headers, json=loading_payload)
-        # print("Loading message sent:", loading_res.status_code)
-        
+        token = get_chat_access_token("config/creds.json")
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+        # 1. Send loading message
+        placeholder_payload = {"text": "💬 Generating response..."}
+        placeholder_url = f"https://chat.googleapis.com/v1/{space_id}/messages"
+        placeholder_res = requests.post(placeholder_url, headers=headers, json=placeholder_payload)
+
+        message_id = None
+        if placeholder_res.status_code == 200:
+            message_id = placeholder_res.json().get("name")  # e.g. "spaces/AAA/messages/BBB"
+
+        # 2. Process
         intent = detect_intent(message)
         print(f"Detected intent: {intent}")
-        if intent == "raise_leave_request":
-            request_id = str(uuid.uuid4())
-            session = {"state": "awaiting_confirmation", "reason": message, "ticket_type": "Leave", "space_id": space_id, "request_id": request_id}
-            user_sessions[user] = session
-            return JSONResponse(content=build_leave_confirmation_card("Do you want to submit this leave request?", message))
+        session = user_sessions.get(user, {"state": None, "space_id": space_id})
+        result = dispatch_agent(intent, message, user, session)
 
-        elif intent == "raise_hr_ticket":
-            return JSONResponse(content={"text": "HR ticket flow not implemented."})
-        elif intent == "raise_it_ticket":
-            return JSONResponse(content={"text": "IT ticket flow not implemented."})
-        elif intent == "greeting":
-            response = generate_response(message, instruction="You are a friendly assistant. Greet the user.")
-            return JSONResponse(content={"text": response})
-        elif intent == "document_query":
-            # Extract a simple keyword from the user message
-            # keyword = extract_query_term(message)  # implement this to strip stopwords etc.
-            doc_info = search_drive_folder(message)
-            return JSONResponse(content={"text": doc_info})
-        elif intent == "github_repo_query":
-            repo_url_match = re.search(r"https?://github\.com/[\w\.-]+/[\w\.-]+", message)
-            if repo_url_match:
-                repo_url = repo_url_match.group()
-                answer = answer_from_github_repo(message, repo_url)
-                return JSONResponse(content={"text": answer})
-        elif intent == "status_doc":
-            name = generate_response(message, instruction="Extract the person name from this message, return just the name")
-            print(name)
-            if not name:
-                return JSONResponse(content={"text": "❌ Could not extract name. Try saying 'What is the status of <name>'."})
-            doc_url = get_status_doc_url(name)
-            if not doc_url:
-                return JSONResponse(content={"text": f"❌ Could not find a document for {name}."})
-            try:
-                doc_text = get_google_doc_text(doc_url)
-                summary = analyze_status_doc( doc_text, question=message, person_name=name)
-                return JSONResponse(content={"text": f"📄 *Status summary for {name}*:\n\n{summary}"})
-            except Exception as e:
-                print("Doc fetch/analyze error:", str(e))
-                return JSONResponse(content={"text": f"❌ Error processing document for {name}."})
+        # 3. Delete placeholder
+        if message_id:
+            delete_url = f"https://chat.googleapis.com/v1/{message_id}"
+            requests.delete(delete_url, headers=headers)
 
-        elif intent == "emails_summarizer":
-            try:
-                emails = fetch_recent_emails(user,  max_emails=5)
-                if not emails:
-                    return JSONResponse(content={"text": "📭 No recent emails found."})
+        # 4. Return actual response
+        if result.get("session"):
+            user_sessions[user] = result.get("session", session)
+        return JSONResponse(content=result.get("response"))
 
-                task_responses = []
-                for email in emails:
-                    summary = summarize_email(email)
-                    task = extract_task(summary)
-                    print("Task Extracted:", task)
-                    task_responses.append(task)
-
-                final_summary = rank_and_format_tasks(task_responses)
-                return JSONResponse(content={"text": final_summary})
-
-            except Exception as e:
-                print("Email summarization error:", e)
-                return JSONResponse(content={"text": "⚠️ Could not analyze emails."})
-        elif intent == "need_help":
-            response = find_internal_expert(message)
-            return JSONResponse(content={"text": response})
-        else:
-            answer = answer_from_docs(message)
-            return JSONResponse(content={"text": answer})
-
-    return JSONResponse(content={"text": "I'm not sure how to help with that yet."})
 

@@ -3,13 +3,17 @@ import httpx
 import re
 import requests
 import os
+import json
 from dotenv import load_dotenv
 from oauth2client.service_account import ServiceAccountCredentials
-from .chat_auth import get_chat_access_token
-from .cards import build_leave_approval_card
-
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
+
+from .chat_auth import get_chat_access_token
+from .cards import build_leave_approval_card
+from models.query_llm import query_mistral_dkubex
+
+
 
 load_dotenv()
 
@@ -114,3 +118,55 @@ def get_name_email_map():
     print(email)
 
     return email
+
+def resolve_closest_name_with_llm(input_name: str, data: list[dict]) -> str:
+    """
+    Uses LLM to find the closest matching name from the data list for a possibly misspelled input.
+    Returns the best matching name exactly as in data, or "Unknown".
+    """
+
+    valid_names = [row["Name"] for row in data if row.get("Name")]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that resolves misspelled names by matching them "
+                "to the most likely correct name from a known directory.\n"
+                "Always return a strict JSON like this: {\"match\": \"Correct Name\"}.\n"
+                "If no match is confident, return: {\"match\": \"Unknown\"}.\n\n"
+                f"Directory: {valid_names}"
+            )
+        },
+        {
+            "role": "user",
+            "content": f"Find closest match for: {input_name}"
+        }
+    ]
+
+    raw_response = query_mistral_dkubex(messages)
+    
+    try:
+        parsed = json.loads(raw_response)
+        match = parsed.get("match", "Unknown")
+        return match if match in valid_names else "Unknown"
+    except Exception:
+        print("❌ Failed to parse LLM response:", raw_response)
+        return "Unknown"
+
+
+def get_email_from_name(name: str) -> str:
+    client = get_sheet_client()
+    sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1XbVka8zPAQaBmirGYCUocPeRnD5I7FLf3JCA09HFP20/edit?usp=sharing").sheet1
+    data = sheet.get_all_records()
+    print(data)
+    for row in data:
+        if row["Name"].strip().lower() == name.strip().lower():
+            return row["Email"]
+
+    closest_name_match = resolve_closest_name_with_llm(name, data)
+    for row in data:
+        if row["Name"].strip().lower() == closest_name_match.strip().lower():
+            return row["Email"]
+    return None
+

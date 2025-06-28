@@ -17,6 +17,8 @@ def detect_intent(message: str):
                 "- `need_help`: when the user is stuck or asking for help in some technical or work-related task (e.g., React issue, deployment help)\n"
                 "- `status_doc`: when the user is asking for status (e.g., status of, status)\n"
                 "- `emails_summarizer`: when the user is asking for emails (e.g., important emails, summarize emails)\n"
+                "- `policy_query`: when the user is asking about company policies on leaves, work from home, employee referalls etc. So basically if he asks questions like that.\n"
+                 "- `schedule_meeting`: when the user is asking for scheduling a meeting (e.g., meetings, schedule meeting, create a meeting, meeting with)\n"
                 "- `general_query`: when the user is asking a general question that doesn't match the above categories\n\n"
                 "Understand whether the message is an action (like requesting leave or raising a ticket) or a general query. "
                 "Return **only** the correct intent label. No explanation, no formatting."
@@ -45,5 +47,9 @@ def detect_intent(message: str):
         return "status_doc"
     elif "emails_summarizer" in intent:
         return "emails_summarizer"
+    elif "policy_query" in intent:
+        return "policy_query"
+    elif "schedule_meeting" in intent:
+        return "schedule_meeting"
     else:
         return "general_query"

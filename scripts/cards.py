@@ -167,3 +167,57 @@ def build_ai_email_preview_card(employee_email: str, email_body: str, request_id
             }
         ]
     }
+    
+def build_meeting_slot_selection_card(employee_email: str, participants: list, available_slots: list, title: str, request_id: str):
+    """
+    Show available slots as buttons. Clicking one triggers meeting creation.
+    """
+    slot_buttons = []
+    for slot in available_slots[:10]: 
+        slot_buttons.append({
+            "textButton": {
+                "text": slot,
+                "onClick": {
+                    "action": {
+                        "actionMethodName": "confirm_meeting_slot",
+                        "parameters": [
+                            {"key": "employee", "value": employee_email},
+                            {"key": "slot", "value": slot},
+                            {"key": "participants", "value": ",".join(participants)},
+                            {"key": "title", "value": title},
+                            {"key": "request_id", "value": request_id}
+                        ]
+                    }
+                }
+            }
+        })
+
+    return {
+        "cards": [
+            {
+                "header": {
+                    "title": "📅 Select Meeting Slot",
+                    "subtitle": f"Available options for: {title or 'Meeting'}"
+                },
+                "sections": [
+                    {
+                        "widgets": [
+                            {
+                                "textParagraph": {
+                                    "text": f"Participants: {', '.join(participants)}"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "widgets": [
+                            {
+                                "buttons": slot_buttons
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
