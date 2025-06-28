@@ -16,14 +16,14 @@ class MeetingSchedulerAgent:
 
     def handle(self, message: str, user: str, session: dict) -> dict:
         info = self.extract_meeting_request(message)
-        print("hi")
-        print(info)
+        print("Extracted meeting info:", info)
         participants = self.resolve_participant_emails(info.get("participants", []))
         if user not in participants:
             participants.append(user)
 
-        date = self.normalize_to_iso_date(info.get("date", ""))
-        slot = self.find_common_free_slot(participants, date, info.get("duration", ""), info.get("priority", "Normal"))
+        date = self.normalize_to_iso_date(info.get("date", "today"))
+        time = info.get("time", "").strip()
+        slot = self.find_common_free_slot(participants, date, time, info.get("duration", ""), info.get("priority", "Normal"))
 
         if not slot:
             return {"response": {"text": "❌ No common free time found."}, "session": session}
@@ -35,6 +35,7 @@ class MeetingSchedulerAgent:
             "response": build_meeting_slot_selection_card(
                 employee_email=user,
                 participants=participants,
+                date=date,
                 available_slots=available_slots,
                 title=info.get("title", "Team Meeting"),
                 request_id=request_id
@@ -102,14 +103,14 @@ class MeetingSchedulerAgent:
         discard = timedelta(minutes=dt.minute % 15, seconds=dt.second, microseconds=dt.microsecond)
         return (dt + timedelta(minutes=15)) - discard if discard else dt
 
-    def find_common_free_slot(self, emails, date, duration_min, priority="Normal", display_tz="Asia/Kolkata"):
+    def find_common_free_slot(self, emails, date, time, duration_min, priority="Normal", display_tz="Asia/Kolkata"):
         all_slots = []
 
         now_utc = datetime.now(timezone.utc) + timedelta(minutes=10)
         now_rounded = self.round_up_to_next_quarter(now_utc)
 
         for email in emails:
-            raw_slots = get_free_slots(email, date, duration_min)
+            raw_slots = get_free_slots(email, date, time, duration_min)
             slot_pairs = []
             for slot in raw_slots:
                 try:

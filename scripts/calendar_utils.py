@@ -1,6 +1,7 @@
 import os
 import pickle
 from datetime import datetime, timedelta, timezone
+import dateparser
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -28,7 +29,7 @@ def get_calendar_service():
 
     return build('calendar', 'v3', credentials=creds)
 
-def get_free_slots(email: str, date: str, duration_min=30):
+def get_free_slots(email: str, date: str, time: str, duration_min=30):
     service = get_calendar_service()
 
     # ✅ Validate duration
@@ -39,18 +40,26 @@ def get_free_slots(email: str, date: str, duration_min=30):
     except Exception:
         duration_min = 30
 
-    # ✅ Prepare time range for 9 AM to 5 PM in UTC
+    # ✅ Parse the user time and convert to UTC
+    parsed_time = dateparser.parse(f"{date} {time}", settings={'TIMEZONE': 'Asia/Kolkata', 'RETURN_AS_TIMEZONE_AWARE': True})
+    if not parsed_time:
+        print("❌ Could not parse time. Using default 9 AM UTC.")
+        parsed_time = datetime.strptime(date, "%Y-%m-%d").replace(hour=9, tzinfo=timezone.utc)
+    else:
+        parsed_time = parsed_time.astimezone(timezone.utc)
+
+    # ✅ Add 10-minute buffer to current time and user-specified time
+    now_utc = datetime.now(timezone.utc)
+    min_start_time = max(now_utc + timedelta(minutes=10), parsed_time + timedelta(minutes=10))
+
+    # ✅ Define workday bounds
     date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-    start_dt = datetime.combine(date_obj, datetime.min.time()).replace(hour=9, tzinfo=timezone.utc)
-    end_dt = datetime.combine(date_obj, datetime.min.time()).replace(hour=17, tzinfo=timezone.utc)
+    start_of_day = datetime.combine(date_obj, datetime.min.time()).replace(hour=9, tzinfo=timezone.utc)
+    end_of_day = datetime.combine(date_obj, datetime.min.time()).replace(hour=17, tzinfo=timezone.utc)
 
-    # ✅ Get current UTC time + 10-minute buffer
-    now = datetime.now(timezone.utc)
-    min_start_time = now + timedelta(minutes=10)
-
-    # ✅ If meeting date is today, skip slots before `min_start_time`
-    if date_obj == now.date():
-        start_dt = max(start_dt, min_start_time)
+    # Clamp start to latest of (work start, now+10min, user time+10min)
+    start_dt = max(start_of_day, min_start_time)
+    end_dt = end_of_day
 
     body = {
         "timeMin": start_dt.isoformat(),
@@ -61,6 +70,7 @@ def get_free_slots(email: str, date: str, duration_min=30):
     try:
         result = service.freebusy().query(body=body).execute()
         busy_slots = result['calendars'][email]['busy']
+
         busy_intervals = [
             (
                 datetime.fromisoformat(b['start'].replace('Z', '+00:00')),
@@ -75,12 +85,7 @@ def get_free_slots(email: str, date: str, duration_min=30):
         while current + timedelta(minutes=duration_min) <= end_dt:
             candidate_end = current + timedelta(minutes=duration_min)
 
-            # ✅ Skip if the *start* time is before `min_start_time`
-            if current < min_start_time:
-                current += timedelta(minutes=15)
-                continue
-
-            # ✅ Check overlap
+            # ✅ Check for overlap
             overlap = any(
                 not (candidate_end <= b_start or current >= b_end)
                 for b_start, b_end in busy_intervals
@@ -122,7 +127,7 @@ def create_calendar_event(title, start_time_str, duration_min, attendees, descri
 
     start_dt = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%SZ")
     end_dt = start_dt + timedelta(minutes=duration_int)
-
+    print(f"Creating event from {start_dt} to {end_dt} with duration {duration_int} minutes")
     event = {
         'summary': title or "Meeting",
         'description': description or "Scheduled via AskX bot",

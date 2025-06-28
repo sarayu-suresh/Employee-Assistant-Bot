@@ -168,7 +168,7 @@ async def chat_event(request: Request):
             participants = raw_params.get("participants", "").split(",")
             title = raw_params.get("title")
             request_id = raw_params.get("request_id")
-            date = normalize_to_iso_date("today")
+            date = raw_params.get("date")
             if "–" in selected_slot:
                 start_time = f"{date}T{selected_slot.split('–')[0]}:00Z"
                 meet_link, calendar_link = create_calendar_event(

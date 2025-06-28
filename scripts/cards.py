@@ -1,3 +1,4 @@
+from datetime import datetime
 def build_leave_confirmation_card(title, message=None):
     return {
         "cards": [
@@ -168,7 +169,7 @@ def build_ai_email_preview_card(employee_email: str, email_body: str, request_id
         ]
     }
     
-def build_meeting_slot_selection_card(employee_email: str, participants: list, available_slots: list, title: str, request_id: str):
+def build_meeting_slot_selection_card(employee_email: str, participants: list, date: datetime, available_slots: list, title: str, request_id: str):
     """
     Show available slots as buttons. Clicking one triggers meeting creation.
     """
@@ -184,6 +185,7 @@ def build_meeting_slot_selection_card(employee_email: str, participants: list, a
                             {"key": "employee", "value": employee_email},
                             {"key": "slot", "value": slot},
                             {"key": "participants", "value": ",".join(participants)},
+                            {"key": "date", "value": date},
                             {"key": "title", "value": title},
                             {"key": "request_id", "value": request_id}
                         ]
