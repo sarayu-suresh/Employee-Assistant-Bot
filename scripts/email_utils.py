@@ -1,5 +1,6 @@
 import datetime
 import os
+import dateparser
 import pickle
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -31,10 +32,26 @@ def get_gmail_service():
 
     return build('gmail', 'v1', credentials=creds)
 
-def fetch_recent_emails(user_email=None, max_emails=10):
+def fetch_recent_emails(user_email=None, max_emails=5, from_sender=None, since=None):
     service = get_gmail_service()
-    date_after = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).strftime("%Y/%m/%d")
-    results = service.users().messages().list(userId='me', q=f"after:{date_after}", maxResults=max_emails).execute()
+
+    # 🕒 Parse `since` to Gmail-compatible format
+    if since:
+        parsed_date = dateparser.parse(since)
+        if parsed_date:
+            date_after = parsed_date.strftime("%Y/%m/%d")
+        else:
+            # Default to 7 days ago if parsing fails
+            date_after = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).strftime("%Y/%m/%d")
+    else:
+        date_after = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).strftime("%Y/%m/%d")
+
+    # 🔍 Build Gmail search query
+    query = f"after:{date_after}"
+    if from_sender:
+        query += f" from:{from_sender}"
+
+    results = service.users().messages().list(userId='me', q=query, maxResults=max_emails).execute()
     messages = results.get('messages', [])
 
     emails = []
@@ -49,5 +66,4 @@ def fetch_recent_emails(user_email=None, max_emails=10):
             "subject": subject,
             "snippet": snippet,
         })
-
     return emails
