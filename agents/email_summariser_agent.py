@@ -1,6 +1,8 @@
-# agents/email_summarizer.py
 from models.query_llm import query_mistral_dkubex
 from scripts.email_utils import fetch_recent_emails
+from scripts.chat_auth import get_chat_access_token
+import requests
+from threading import Thread
 
 class EmailSummarizerAgent:
 
@@ -8,24 +10,56 @@ class EmailSummarizerAgent:
         return intent_name == "emails_summarizer"
 
     def handle(self, message: str, user: str, session: dict) -> dict:
+        space_id = session.get("space_id")
+        if not space_id:
+            return {"response": {"text": "❌ Could not identify chat space."}, "session": session}
+
+        # Start background thread for processing
+        Thread(target=self.process_summary_and_post, args=(user, space_id)).start()
+
+        # Return a loading message immediately
+        loading_card = {
+            "cardsV2": [{
+                "cardId": "email-loading",
+                "card": {
+                    "sections": [{
+                        "widgets": [{
+                            "textParagraph": {
+                                "text": "<b>📬 Fetching your emails...</b><br>Summarizing and extracting tasks. Please wait ⏳"
+                            }
+                        }]
+                    }]
+                }
+            }]
+        }
+        return {"response": loading_card, "session": session}
+
+    def process_summary_and_post(self, user: str, space_id: str):
         try:
             emails = fetch_recent_emails(user, max_emails=5)
             if not emails:
-                return {"response": {"text": "📭 No recent emails found."}, "session": session}
+                self.send_followup(space_id, "📭 No recent emails found.")
+                return
 
             task_responses = []
             for email in emails:
                 summary = self.summarize_email(email)
                 task = self.extract_task(summary)
-                print("Task Extracted:", task)
                 task_responses.append(task)
 
             final_summary = self.rank_and_format_tasks(task_responses)
-            return {"response": {"text": final_summary}, "session": session}
+            self.send_followup(space_id, final_summary)
 
         except Exception as e:
             print("Email summarization error:", e)
-            return {"response": {"text": "⚠️ Could not analyze emails."}, "session": session}
+            self.send_followup(space_id, "⚠️ Could not analyze emails.")
+
+    def send_followup(self, space_id: str, text: str):
+        token = get_chat_access_token("config/creds.json")
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        url = f"https://chat.googleapis.com/v1/{space_id}/messages"
+        payload = {"text": text}
+        requests.post(url, headers=headers, json=payload)
 
     def summarize_email(self, email):
         messages = [

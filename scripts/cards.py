@@ -1,4 +1,9 @@
 from datetime import datetime
+import json
+import requests
+
+from scripts.chat_auth import get_chat_access_token
+
 def build_leave_confirmation_card(title, message=None):
     return {
         "cards": [
@@ -198,7 +203,7 @@ def build_meeting_slot_selection_card(employee_email: str, participants: list, d
         "cards": [
             {
                 "header": {
-                    "title": "📅 Select Meeting Slot",
+                    "title": f"📅 Select Meeting Slot - {date}",
                     "subtitle": f"Available options for: {title or 'Meeting'}"
                 },
                 "sections": [
@@ -223,3 +228,26 @@ def build_meeting_slot_selection_card(employee_email: str, participants: list, d
         ]
     }
 
+def send_loading_card(space_id: str) -> str:
+    token = get_chat_access_token("config/creds.json")
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "loadingCard",
+                "card": {
+                    "header": {"title": "🤖 Generating response..."},
+                    "sections": [
+                        {
+                            "widgets": [{"textParagraph": {"text": "Thinking...⏳"}}]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    url = f"https://chat.googleapis.com/v1/{space_id}/messages"
+    res = requests.post(url, headers=headers, json=payload)
+    if res.status_code == 200:
+        return res.json().get("name")  
+    return None

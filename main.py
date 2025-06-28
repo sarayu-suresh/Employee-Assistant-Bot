@@ -13,7 +13,7 @@ import re
 from agent_manager import dispatch_agent
 from scripts.chat_auth import get_chat_access_token
 from scripts.sheet_utils import get_manager_email, notify_manager_in_space
-from scripts.cards import build_leave_confirmation_card, build_ai_email_preview_card
+from scripts.cards import build_leave_confirmation_card, build_ai_email_preview_card, send_loading_card
 from models.query_llm import query_mistral_dkubex
 from models.query_embedding import get_remote_embedding
 from agents.detect_intent import detect_intent
@@ -25,9 +25,7 @@ load_dotenv()
 app = FastAPI()
 
 user_sessions = {}
-
-class ChatInput(BaseModel):
-    message: str
+    
 
 @app.post("/chat-event")
 async def chat_event(request: Request):
@@ -190,32 +188,18 @@ async def chat_event(request: Request):
                 return JSONResponse(content={"text": "❌ Invalid slot selection."})
 
     if message:
-        token = get_chat_access_token("config/creds.json")
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
-        # 1. Send loading message
-        placeholder_payload = {"text": "💬 Generating response..."}
-        placeholder_url = f"https://chat.googleapis.com/v1/{space_id}/messages"
-        placeholder_res = requests.post(placeholder_url, headers=headers, json=placeholder_payload)
-
-        message_id = None
-        if placeholder_res.status_code == 200:
-            message_id = placeholder_res.json().get("name")  # e.g. "spaces/AAA/messages/BBB"
-
-        # 2. Process
         intent = detect_intent(message)
         print(f"Detected intent: {intent}")
         session = user_sessions.get(user, {"state": None, "space_id": space_id})
+
+        loading_msg_id = send_loading_card(space_id)
+
         result = dispatch_agent(intent, message, user, session)
 
-        # 3. Delete placeholder
-        if message_id:
-            delete_url = f"https://chat.googleapis.com/v1/{message_id}"
-            requests.delete(delete_url, headers=headers)
-
-        # 4. Return actual response
         if result.get("session"):
             user_sessions[user] = result.get("session", session)
+
         return JSONResponse(content=result.get("response"))
+
 
 

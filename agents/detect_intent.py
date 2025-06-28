@@ -16,7 +16,7 @@ def detect_intent(message: str):
                 "- `document_query`: if the user is asking to fetch or get any company document\n"
                 "- `need_help`: when the user is stuck or asking for help in some technical or work-related task (e.g., React issue, deployment help)\n"
                 "- `status_doc`: when the user is asking for status (e.g., status of, status)\n"
-                "- `emails_summarizer`: when the user is asking for emails (e.g., important emails, summarize emails)\n"
+                "- `emails_summarizer`: when the user is asking to summarize emails (e.g., important emails, summarize emails)\n"
                 "- `policy_query`: when the user is asking about company policies on leaves, work from home, employee referalls etc. So basically if he asks questions like that.\n"
                  "- `schedule_meeting`: when the user is asking for scheduling a meeting (e.g., meetings, schedule meeting, create a meeting, meeting with)\n"
                 "- `general_query`: when the user is asking a general question that doesn't match the above categories\n\n"
@@ -28,28 +28,33 @@ def detect_intent(message: str):
     ]
 
     result = query_mistral_dkubex(messages)
+    
     print(result)
 
     intent = result.strip().lower()
-    if "raise_leave_request" in intent:
+    intent = intent.replace("`", "")
+    print(intent)
+    if intent in ["raise_leave_request", "raise\_leave\_request"]:
         return "raise_leave_request"
-    elif "raise_it_ticket" in intent:
+    elif intent in ["raise_it_ticket", "raise\_it\_ticket"]:
         return "raise_it_ticket"
-    elif "raise_hr_ticket" in intent:
+    elif intent in ["raise_hr_ticket", "raise\_hr\_ticket"]:
         return "raise_hr_ticket"
-    elif "greeting" in intent:
+    elif intent in ["greeting", "greeting"]:
         return "greeting"
-    elif "need_help" in intent:
+    elif intent in ["need_help", "need\_help"]:
         return "need_help"
-    elif "document_query" in intent:
+    elif intent in ["document_query", "document\_query"]:
         return "document_query"
-    elif "status_doc" in intent:
+    elif intent in ["status_doc", "status\_doc"]:
         return "status_doc"
-    elif "emails_summarizer" in intent:
+    elif intent in ["emails_summarizer", "emails\_summarizer"]:
         return "emails_summarizer"
-    elif "policy_query" in intent:
+    elif intent in ["policy_query", "policy\_query"]:
         return "policy_query"
-    elif "schedule_meeting" in intent:
+    elif intent in ["schedule_meeting", "schedule\_meeting"]:
         return "schedule_meeting"
     else:
         return "general_query"
+
+

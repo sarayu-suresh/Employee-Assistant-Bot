@@ -53,7 +53,7 @@ def notify_manager_in_space(employee_email: str, reason: str, request_id: str):
         print("Manager not found for:", employee_email)
         return False
 
-    token = get_chat_access_token("creds.json")
+    token = get_chat_access_token("config/creds.json")
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
